@@ -11,6 +11,10 @@ class MoEConfig:
     eval_capacity_factor: float = 2.0
     noisy_gating: bool = True
     aux_loss_coef: float = 0.01
+    heterogeneous: bool = False
+    expert_dims: list = None
+    prune_interval: int = 0
+    prune_threshold: float = 0.05
 
 
 @dataclass

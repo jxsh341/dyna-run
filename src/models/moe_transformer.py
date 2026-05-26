@@ -72,6 +72,8 @@ class MoETransformerBlock(nn.Module):
             top_k=config.moe.top_k,
             noisy_gating=config.moe.noisy_gating,
             aux_loss_coef=config.moe.aux_loss_coef,
+            heterogeneous=config.moe.heterogeneous,
+            expert_dims=config.moe.expert_dims,
         )
         self.norm1 = RMSNorm(config.d_model)
         self.norm2 = RMSNorm(config.d_model)

@@ -37,6 +37,14 @@ class Trainer:
         self.optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4)
         self.checkpoint_dir = Path("data/checkpoints")
         self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        self.pruning_scheduler = None
+        if config.moe.prune_interval > 0 and config.use_moe:
+            from src.core.pruning import PruningScheduler
+            self.pruning_scheduler = PruningScheduler(
+                model, config.moe.n_experts,
+                prune_interval=config.moe.prune_interval,
+                prune_threshold=config.moe.prune_threshold,
+            )
 
     def train(self, text, max_steps=2000, seq_len=128, batch_size=16):
         dataset = TextDataset(text, seq_len, self.config.vocab_size)
@@ -59,6 +67,8 @@ class Trainer:
                 torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
                 self.optimizer.step()
                 losses.append(loss.item())
+                if self.pruning_scheduler:
+                    self.pruning_scheduler.step(indices)
                 if step % 200 == 0:
                     print(f"  step {step}/{max_steps} | loss: {loss.item():.4f} | aux_loss: {aux_loss.item():.4f}")
                 step += 1

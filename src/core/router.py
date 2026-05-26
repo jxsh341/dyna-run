@@ -9,6 +9,7 @@ class Router(nn.Module):
         self.n_experts = n_experts
         self.noisy_gating = noisy_gating
         self.w_gate = nn.Linear(d_model, n_experts, bias=False)
+        self.expert_mask = None
         if noisy_gating:
             self.w_noise = nn.Linear(d_model, n_experts, bias=False)
             self._init_noise()
@@ -16,11 +17,22 @@ class Router(nn.Module):
     def _init_noise(self):
         nn.init.zeros_(self.w_noise.weight)
 
+    def set_expert_mask(self, active_experts):
+        mask = torch.full((self.n_experts,), float("-inf"))
+        for eid in active_experts:
+            mask[eid] = 0.0
+        self.expert_mask = mask
+
+    def clear_expert_mask(self):
+        self.expert_mask = None
+
     def _gates_to_load(self, gates):
         return (gates > 0).sum(0)
 
     def _top_k_gating(self, x):
         gate_logits = self.w_gate(x)
+        if self.expert_mask is not None:
+            gate_logits = gate_logits + self.expert_mask.to(gate_logits.device)
         if self.training and self.noisy_gating:
             noise = self.w_noise(x)
             noise_std = F.softplus(noise) + 1e-6

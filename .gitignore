@@ -1,0 +1,25 @@
+# Private agent diary
+AGENTS.md
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# Model checkpoints & shards
+data/checkpoints/
+data/experts/
+
+# Environment
+.venv/
+venv/
+env/
+*.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo

@@ -24,12 +24,14 @@ class Expert(nn.Module):
 
 
 class Experts(nn.Module):
-    def __init__(self, n_experts: int, d_model: int, d_ff: int):
+    def __init__(self, n_experts: int, d_model: int, d_ff: int, expert_dims: list = None):
         super().__init__()
+        dims = expert_dims if expert_dims else [d_ff] * n_experts
         self.experts = nn.ModuleList(
-            [Expert(d_model, d_ff) for _ in range(n_experts)]
+            [Expert(d_model, dims[i]) for i in range(n_experts)]
         )
         self.n_experts = n_experts
+        self.expert_dims = dims
 
     def forward(self, x, expert_indices):
         batch_size, seq_len, d_model = x.shape

@@ -79,3 +79,38 @@ class Profiler:
             x = torch.randint(0, moe_model.config.vocab_size, (1, L), device=device)
             results[L] = self.compare(moe_model, dense_model, x, n_runs)
         return results
+
+    def measure_streaming(self, streaming_engine, input_ids):
+        logits, tracer, timings, stream_metrics, mem_summary = streaming_engine.forward_streaming(input_ids)
+        disk_reads = stream_metrics.get("disk_read_ms", [])
+        pin_times = stream_metrics.get("pin_memory_ms", [])
+        sharing_map = streaming_engine.get_sharing_map()
+        n_shared = len(sharing_map)
+        return {
+            "total_ms": timings["total_ms"],
+            "routing_ms": np.mean(timings["routing_ms"]) if timings["routing_ms"] else 0,
+            "streaming_ms": np.mean(timings["streaming_ms"]) if timings["streaming_ms"] else 0,
+            "compute_ms": np.mean(timings["compute_ms"]) if timings["compute_ms"] else 0,
+            "disk_read_avg_ms": np.mean(disk_reads) if disk_reads else 0,
+            "disk_read_total_ms": sum(disk_reads),
+            "pin_memory_avg_ms": np.mean(pin_times) if pin_times else 0,
+            "cache_hit_rate": stream_metrics.get("cache_hit_rate", lambda: 0.0)(),
+            "cache_hits": stream_metrics.get("cache_hits", 0),
+            "cache_misses": stream_metrics.get("cache_misses", 0),
+            "experts_in_gpu": mem_summary["n_experts_in_gpu"],
+            "peak_gpu_mb": mem_summary["peak_gpu_mb"],
+            "gpu_memory_mb": mem_summary["gpu_memory_mb"],
+            "total_loaded_mb": mem_summary["total_loaded_mb"],
+            "total_evicted_mb": mem_summary["total_evicted_mb"],
+            "shared_experts": n_shared,
+        }
+
+    def streaming_vs_in_memory(self, streaming_engine, model, input_ids, n_runs=3):
+        in_mem = self.measure_inference(model, input_ids, n_runs=n_runs)
+        streaming = self.measure_streaming(streaming_engine, input_ids)
+        return {
+            "in_memory": in_mem,
+            "streaming": streaming,
+            "latency_ratio": streaming["total_ms"] / max(in_mem["mean_latency_ms"], 0.01),
+            "gpu_mem_savings_pct": (1 - streaming["peak_gpu_mb"] / max(in_mem["ram_mb"], 0.1)) * 100,
+        }
