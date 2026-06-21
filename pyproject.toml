@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dyna-run"
+version = "0.1.0"
+description = "Dynamic Sparse AI Inference Runtime"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "torch>=2.0.0",
+    "numpy>=1.24.0",
+    "psutil>=5.9.0",
+    "pandas>=2.0.0",
+    "plotly>=5.14.0",
+    "matplotlib>=3.7.0",
+    "streamlit>=1.28.0",
+    "requests>=2.31.0",
+]
+
+[project.optional-dependencies]
+api = [
+    "fastapi>=0.110.0",
+    "uvicorn>=0.27.0",
+    "pydantic>=2.0.0",
+]
+external = [
+    "transformers>=4.35.0",
+    "llama-cpp-python>=0.2.0",
+]
+dev = [
+    "pytest>=8.0.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["src*", "dashboard*"]

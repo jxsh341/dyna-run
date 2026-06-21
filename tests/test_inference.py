@@ -46,8 +46,20 @@ def test_model_generate():
     assert generated.shape[1] == 13, f"Expected 13 tokens, got {generated.shape[1]}"
 
 
+def test_model_generate_zero_temperature_is_greedy():
+    config = ModelConfig(vocab_size=256, n_layers=2, max_seq_len=64)
+    model = MoETransformer(config)
+    model.eval()
+    x = torch.randint(0, 256, (1, 8))
+    with torch.no_grad():
+        generated1 = model.generate(x, max_new_tokens=5, temperature=0)
+        generated2 = model.generate(x, max_new_tokens=5, temperature=0)
+    assert torch.equal(generated1, generated2)
+
+
 if __name__ == "__main__":
     test_inference_engine_trace()
     test_routing_metrics()
     test_model_generate()
+    test_model_generate_zero_temperature_is_greedy()
     print("All inference tests passed!")

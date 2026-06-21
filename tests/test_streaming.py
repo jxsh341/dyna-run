@@ -73,6 +73,24 @@ def test_engine_shard_and_forward():
     engine.reset_shards()
 
 
+def test_streaming_matches_normal_forward(tmp_path):
+    torch.manual_seed(0)
+    cfg = ModelConfig(vocab_size=128, d_model=64, n_layers=2, n_heads=2,
+                      max_seq_len=64, moe=MoEConfig(n_experts=4, top_k=2, d_model=64, d_ff=128))
+    model = MoETransformer(cfg)
+    model.eval()
+    x = torch.randint(0, 128, (1, 8))
+    with torch.no_grad():
+        expected_logits, _, _, _ = model(x)
+
+    engine = SparseStreamingEngine(model, cfg, shard_dir=tmp_path)
+    engine.shard_model()
+    streaming_logits, _, _, _, _ = engine.forward_streaming(x)
+
+    assert torch.allclose(streaming_logits, expected_logits, atol=1e-5)
+    engine.reset_shards()
+
+
 def test_streaming_profile():
     cfg = ModelConfig(vocab_size=128, d_model=64, n_layers=2, n_heads=2,
                       max_seq_len=64, moe=MoEConfig(n_experts=4, top_k=2, d_model=64, d_ff=128))

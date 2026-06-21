@@ -1,6 +1,7 @@
 import torch
 import sys
 from pathlib import Path
+import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.core.experts import Expert, Experts
@@ -17,7 +18,9 @@ def test_experts_output_shape():
     experts = Experts(n_experts=8, d_model=128, d_ff=256)
     x = torch.randn(2, 8, 128)
     indices = torch.randint(0, 8, (2, 8, 2))
-    y = experts(x, indices)
+    gates = torch.nn.functional.one_hot(indices, num_classes=8).float().sum(dim=-2)
+    gates = gates / gates.sum(dim=-1, keepdim=True)
+    y = experts(x, indices, gates)
     assert y.shape == (2, 8, 128), f"Expected (2,8,128), got {y.shape}"
 
 
@@ -25,7 +28,9 @@ def test_experts_selective_activation():
     experts = Experts(n_experts=8, d_model=128, d_ff=256)
     x = torch.randn(1, 4, 128)
     indices = torch.zeros(1, 4, 2, dtype=torch.long)
-    y = experts(x, indices)
+    gates = torch.zeros(1, 4, 8)
+    gates[:, :, 0] = 1.0
+    y = experts(x, indices, gates)
     assert y.shape == (1, 4, 128)
     assert not torch.isnan(y).any()
 
@@ -49,7 +54,9 @@ def test_heterogeneous_experts():
         assert w1.shape[0] == expected_hidden, f"Expert {i}: expected {expected_hidden}, got {w1.shape[0]}"
     x = torch.randn(2, 4, 128)
     indices = torch.randint(0, 4, (2, 4, 2))
-    y = experts(x, indices)
+    gates = torch.nn.functional.one_hot(indices, num_classes=4).float().sum(dim=-2)
+    gates = gates / gates.sum(dim=-1, keepdim=True)
+    y = experts(x, indices, gates)
     assert y.shape == (2, 4, 128)
 
 
@@ -58,10 +65,31 @@ def test_heterogeneous_varying_sizes():
     experts = Experts(n_experts=2, d_model=64, d_ff=128, expert_dims=dims)
     x = torch.randn(1, 2, 64)
     indices = torch.tensor([[[0, 1]], [[0, 1]]])
-    y = experts(x, indices)
+    gates = torch.full((1, 2, 2), 0.5)
+    y = experts(x, indices, gates)
     assert y.shape == (1, 2, 64)
     assert experts.experts[0].net[0].weight.shape[0] == 64
     assert experts.experts[1].net[0].weight.shape[0] == 512
+
+
+def test_experts_apply_gate_weights():
+    experts = Experts(n_experts=2, d_model=4, d_ff=8)
+    x = torch.randn(1, 3, 4)
+    indices = torch.zeros(1, 3, 1, dtype=torch.long)
+    gates = torch.zeros(1, 3, 2)
+    gates[:, :, 0] = 0.25
+    y = experts(x, indices, gates)
+    expected = experts.experts[0](x) * 0.25
+    assert torch.allclose(y, expected, atol=1e-6)
+
+
+def test_experts_validate_gate_shape():
+    experts = Experts(n_experts=2, d_model=4, d_ff=8)
+    x = torch.randn(1, 3, 4)
+    indices = torch.zeros(1, 3, 1, dtype=torch.long)
+    bad_gates = torch.zeros(1, 3, 3)
+    with pytest.raises(ValueError, match="gates"):
+        experts(x, indices, bad_gates)
 
 
 if __name__ == "__main__":
@@ -71,4 +99,6 @@ if __name__ == "__main__":
     test_expert_different_inputs()
     test_heterogeneous_experts()
     test_heterogeneous_varying_sizes()
+    test_experts_apply_gate_weights()
+    test_experts_validate_gate_shape()
     print("All expert tests passed!")

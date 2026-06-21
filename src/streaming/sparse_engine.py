@@ -94,10 +94,13 @@ class SparseStreamingEngine:
                         if expert_weights is not None:
                             mask = (indices_flat == eid).any(dim=-1)
                             if mask.any():
+                                weights = gates.view(-1, gates.shape[-1])[
+                                    mask, eid
+                                ].unsqueeze(-1)
                                 expert_out = self._apply_expert_weights(
                                     x_flat[mask], expert_weights
                                 )
-                                moe_flat[mask] = moe_flat[mask] + expert_out
+                                moe_flat[mask] = moe_flat[mask] + expert_out * weights
                     x = x + moe_flat.view(B, T, D)
                 else:
                     moe_out, gates, indices, aux_loss = block.moe(block.norm2(x))

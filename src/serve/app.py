@@ -2,7 +2,7 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-import time
+import os
 import torch
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
@@ -18,6 +18,8 @@ from src.streaming.sparse_engine import SparseStreamingEngine
 _device = "cuda" if torch.cuda.is_available() else "cpu"
 _app_state = {}
 _lifespan_done = False
+DEFAULT_CHECKPOINT_PATH = Path("data/checkpoints/moe_demo.pt")
+CHECKPOINT_ENV_VAR = "DYNA_RUN_CHECKPOINT_PATH"
 
 
 class RouteRequest(BaseModel):
@@ -58,6 +60,27 @@ class HealthResponse(BaseModel):
     model_ready: bool
     shard_count: int
     gpu_memory_mb: float | None = None
+    checkpoint_path: str | None = None
+    checkpoint_loaded: bool = False
+
+
+def _checkpoint_path():
+    return Path(os.environ.get(CHECKPOINT_ENV_VAR, DEFAULT_CHECKPOINT_PATH))
+
+
+def _load_checkpoint_if_available(model):
+    path = _checkpoint_path()
+    explicit_path = CHECKPOINT_ENV_VAR in os.environ
+    if not path.exists():
+        if explicit_path:
+            raise FileNotFoundError(
+                f"Checkpoint configured by {CHECKPOINT_ENV_VAR} was not found: {path}"
+            )
+        return False, str(path)
+    checkpoint = torch.load(path, map_location=_device, weights_only=False)
+    state_dict = checkpoint.get("model_state_dict", checkpoint)
+    model.load_state_dict(state_dict)
+    return True, str(path)
 
 
 def _ensure_loaded():
@@ -69,9 +92,10 @@ def _ensure_loaded():
         max_seq_len=256, moe=moe_config,
     )
     model = MoETransformer(model_config)
-    trainer = _app_state.get("trainer")
-    if trainer:
-        trainer.load_checkpoint()
+    try:
+        checkpoint_loaded, checkpoint_path = _load_checkpoint_if_available(model)
+    except Exception as exc:
+        raise RuntimeError(f"Failed to load API checkpoint: {exc}") from exc
     model.to(_device)
     model.eval()
     engine = SparseStreamingEngine(model, model_config, shard_dir="data/experts")
@@ -80,6 +104,8 @@ def _ensure_loaded():
     _app_state["engine"] = engine
     _app_state["inference"] = InferenceEngine(model)
     _app_state["profiler"] = Profiler()
+    _app_state["checkpoint_path"] = checkpoint_path
+    _app_state["checkpoint_loaded"] = checkpoint_loaded
 
 
 @asynccontextmanager
@@ -107,6 +133,8 @@ async def health():
         model_ready=_app_state.get("model") is not None,
         shard_count=shard_count,
         gpu_memory_mb=torch.cuda.memory_allocated() / (1024 * 1024) if torch.cuda.is_available() else None,
+        checkpoint_path=_app_state.get("checkpoint_path"),
+        checkpoint_loaded=_app_state.get("checkpoint_loaded", False),
     )
 
 
