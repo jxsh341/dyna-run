@@ -1,6 +1,6 @@
 # Dyna-Run — Dynamic Sparse AI Inference Runtime
 
-A lightweight inference runtime that implements **real Mixture-of-Experts (MoE) routing** from scratch. Each token activates only 2 out of 8 expert sub-networks. The runtime stores expert weights on disk and **streams only activated experts to GPU at each layer**, enabling massive model sizes on limited hardware.
+A lightweight inference runtime that implements **real Mixture-of-Experts (MoE) routing** from scratch. The default demo activates 2 out of 8 expert sub-networks per token, while the router supports configurable top-k routing. The runtime stores expert weights on disk and **streams only activated experts to GPU at each layer**, enabling massive model sizes on limited hardware.
 
 ```
 Normal models  = every employee attends every meeting
@@ -44,7 +44,7 @@ Input Tokens → Embedding → [Attention + MoE Layer] × 4 → Output
                                 │
                      ┌──────────┴──────────┐
                   Router                 Experts
-              (top-2 gating)          (8 × SwiGLU FFN)
+              (top-k gating)          (8 × SwiGLU FFN)
                      │                     │
               "token → expert 3"      expert 3 only
               "token → expert 7"      expert 7 only
@@ -92,7 +92,7 @@ ShardManager round-robins shards across devices and saves a device manifest. Sch
 Each expert supports a different `d_ff` width (heterogeneous). Learned `expert_bias` scales gate weights per-expert. PruningScheduler tracks utilization and applies soft-pruning via router expert_mask during training.
 
 ### Phase 8: Production API Server
-FastAPI app at `src/serve/app.py` with 5 endpoints:
+FastAPI app at `src/serve/app.py` with 5 endpoints. By default it tries to load `data/checkpoints/moe_demo.pt`; set `DYNA_RUN_CHECKPOINT_PATH=/path/to/checkpoint.pt` to load another checkpoint explicitly.
 - `GET /health` — device, model status, shard count, GPU memory
 - `POST /route` — token routing decisions without full forward
 - `POST /generate` — autoregressive sampling with routing traces
@@ -117,12 +117,8 @@ python -m streamlit run dashboard/app.py
 python -m uvicorn src.serve.app:app --host 0.0.0.0 --port 8000
 
 # Run all tests
-python tests/test_router.py
-python tests/test_experts.py
-python tests/test_sparse_moe.py
-python tests/test_inference.py
-python tests/test_streaming.py
-python tests/test_phases_7_8.py
+python -m pip install -e ".[api,dev]"
+python -m pytest -q
 ```
 
 ## Troubleshooting
@@ -136,10 +132,13 @@ python tests/test_phases_7_8.py
 
 ## Dependencies
 
-- **Required**: torch, numpy, psutil, pandas, plotly, matplotlib, streamlit, requests
-- **Optional**: fastapi, uvicorn, pydantic (API server), transformers, llama-cpp-python
+- **Required core**: torch, numpy, psutil, pandas, plotly, matplotlib, streamlit, requests
+- **API extra**: `pip install -e ".[api]"` installs fastapi, uvicorn, and pydantic
+- **External-model extra**: `pip install -e ".[external]"` installs transformers and llama-cpp-python
+- **Development/test extra**: `pip install -e ".[api,dev]"` installs API dependencies and pytest for the full test suite
+- **Convenience requirements file**: `pip install -r requirements.txt` installs the project with the API extra
 
 ## Tests
 
-All 6 test suites pass. Each is standalone and uses small dimensions for speed:
+The full pytest suite currently covers router behavior, expert dispatch, sparse MoE layers, inference, streaming/sharding, config validation, pruning, and API schemas. Most tests use small dimensions for speed:
 `vocab_size=128, d_model=64, n_layers=2, n_heads=2, n_experts=4, top_k=2`.

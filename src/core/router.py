@@ -4,10 +4,19 @@ import torch.nn.functional as F
 
 
 class Router(nn.Module):
-    def __init__(self, d_model: int, n_experts: int, noisy_gating: bool = True):
+    def __init__(
+        self,
+        d_model: int,
+        n_experts: int,
+        noisy_gating: bool = True,
+        top_k: int = 2,
+    ):
         super().__init__()
+        if top_k < 1 or top_k > n_experts:
+            raise ValueError(f"top_k must be between 1 and n_experts, got {top_k}")
         self.n_experts = n_experts
         self.noisy_gating = noisy_gating
+        self.top_k = top_k
         self.w_gate = nn.Linear(d_model, n_experts, bias=False)
         self.expert_mask = None
         if noisy_gating:
@@ -40,7 +49,9 @@ class Router(nn.Module):
             gates = F.softmax(noisy_logits, dim=-1)
         else:
             gates = F.softmax(gate_logits, dim=-1)
-        top_k_values, top_k_indices = torch.topk(gates, k=min(self.n_experts, 2), dim=-1)
+        top_k_values, top_k_indices = torch.topk(
+            gates, k=min(self.n_experts, self.top_k), dim=-1
+        )
         mask = F.one_hot(top_k_indices, num_classes=self.n_experts).float()
         mask = mask.sum(dim=-2)
         gates = gates * mask

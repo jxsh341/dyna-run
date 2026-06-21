@@ -9,7 +9,7 @@ class SparseMoE(nn.Module):
                  noisy_gating: bool = True, aux_loss_coef: float = 0.01,
                  heterogeneous: bool = False, expert_dims: list = None):
         super().__init__()
-        self.router = Router(d_model, n_experts, noisy_gating)
+        self.router = Router(d_model, n_experts, noisy_gating, top_k=top_k)
         self.experts = Experts(n_experts, d_model, d_ff, expert_dims=expert_dims)
         self.top_k = top_k
         self.n_experts = n_experts
@@ -28,7 +28,7 @@ class SparseMoE(nn.Module):
             gate_sum = gates.sum(dim=-1, keepdim=True)
             gates = gates / (gate_sum + 1e-10)
             _, indices = torch.topk(gates, k=self.top_k, dim=-1)
-        out = self.experts(x, indices)
+        out = self.experts(x, indices, gates)
         aux_loss = self.router.load_balancing_loss(gates, indices)
         return out, gates, indices, aux_loss * self.aux_loss_coef
 

@@ -33,6 +33,15 @@ def test_router_top_k():
         assert nonzero <= 2, f"Token {i} has {nonzero} non-zero gates (expected <= 2)"
 
 
+def test_router_configurable_top_k():
+    router = Router(d_model=128, n_experts=8, noisy_gating=False, top_k=3)
+    router.eval()
+    x = torch.randn(1, 5, 128)
+    gates, indices = router(x)
+    assert indices.shape == (1, 5, 3)
+    assert ((gates > 0).sum(dim=-1) <= 3).all()
+
+
 def test_router_load_balancing_loss():
     router = Router(d_model=128, n_experts=8, noisy_gating=True)
     x = torch.randn(4, 32, 128)
@@ -45,5 +54,6 @@ if __name__ == "__main__":
     test_router_output_shape()
     test_router_probabilities_sum_to_one()
     test_router_top_k()
+    test_router_configurable_top_k()
     test_router_load_balancing_loss()
     print("All router tests passed!")

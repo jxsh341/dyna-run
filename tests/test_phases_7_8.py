@@ -78,6 +78,13 @@ def test_serve_health_endpoint():
     resp = HealthResponse(status="ok", device="cpu", model_ready=True, shard_count=0)
     assert resp.status == "ok"
     assert resp.device == "cpu"
+    assert resp.checkpoint_loaded is False
+
+
+def test_serve_checkpoint_path_uses_env(monkeypatch):
+    from src.serve.app import CHECKPOINT_ENV_VAR, _checkpoint_path
+    monkeypatch.setenv(CHECKPOINT_ENV_VAR, "/tmp/custom_moe.pt")
+    assert str(_checkpoint_path()) == "/tmp/custom_moe.pt"
 
 
 if __name__ == "__main__":

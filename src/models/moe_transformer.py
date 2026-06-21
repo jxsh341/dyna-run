@@ -36,6 +36,8 @@ def apply_rope(x, cos, sin):
 class Attention(nn.Module):
     def __init__(self, d_model: int, n_heads: int, max_seq_len: int):
         super().__init__()
+        if d_model % n_heads != 0:
+            raise ValueError("d_model must be divisible by n_heads")
         self.n_heads = n_heads
         self.head_dim = d_model // n_heads
         self.wq = nn.Linear(d_model, d_model, bias=False)
@@ -112,12 +114,20 @@ class MoETransformer(nn.Module):
         return logits, all_gates, all_indices, total_aux_loss
 
     def generate(self, idx, max_new_tokens=50, temperature=1.0):
+        if max_new_tokens < 0:
+            raise ValueError("max_new_tokens must be non-negative")
+        if temperature < 0:
+            raise ValueError("temperature must be non-negative")
         for _ in range(max_new_tokens):
             idx_cond = idx[:, -self.config.max_seq_len:]
             logits, gates, indices, aux_loss = self.forward(idx_cond)
-            logits = logits[:, -1, :] / temperature
-            probs = torch.softmax(logits, dim=-1)
-            idx_next = torch.multinomial(probs, num_samples=1)
+            logits = logits[:, -1, :]
+            if temperature == 0:
+                idx_next = torch.argmax(logits, dim=-1, keepdim=True)
+            else:
+                logits = logits / temperature
+                probs = torch.softmax(logits, dim=-1)
+                idx_next = torch.multinomial(probs, num_samples=1)
             idx = torch.cat((idx, idx_next), dim=1)
         return idx
 
